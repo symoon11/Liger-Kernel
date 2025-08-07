@@ -52,8 +52,8 @@ class LigerFusedLinearGRPOFunction(LigerFusedLinearPPOBase):
         old_per_token_logps = old_per_token_logps if old_per_token_logps is not None else per_token_logps.detach()
         coef_1 = torch.exp(per_token_logps - old_per_token_logps)
         coef_2 = clip_coef_fn(coef_1, epsilon_low, epsilon_high)
-        per_token_loss1 = coef_1 * advantages.unsqueeze(1)
-        per_token_loss2 = coef_2 * advantages.unsqueeze(1)
+        per_token_loss1 = coef_1 * advantages
+        per_token_loss2 = coef_2 * advantages
         per_token_loss = -torch.min(per_token_loss1, per_token_loss2)
         if beta != 0.0:
             # Compute KL penalty (approximates KL[per_token_logps, ref_per_token_logps])
@@ -85,8 +85,8 @@ class LigerFusedLinearGRPOFunction(LigerFusedLinearPPOBase):
         metrics = []
         if beta != 0.0:
             metrics.append(((kl_div * attention_mask).sum() / torch.clamp(full_attention_mask.sum(), min=1.0)))
-        is_clipped = ((coef_1 < 1 - epsilon_low) & (advantages.unsqueeze(1) < 0)) | (
-            (coef_1 > 1 + epsilon_high) & (advantages.unsqueeze(1) > 0)
+        is_clipped = ((coef_1 < 1 - epsilon_low) & (advantages < 0)) | (
+            (coef_1 > 1 + epsilon_high) & (advantages > 0)
         )
         metrics.append((is_clipped * attention_mask).sum() / torch.clamp(full_attention_mask.sum(), min=1.0))
         return loss, metrics
@@ -123,7 +123,7 @@ class LigerFusedLinearGRPOFunction(LigerFusedLinearPPOBase):
             weight (torch.Tensor): Weight tensor. Shape: (vocab_size, hidden_size)
             selected_token_ids (torch.Tensor): Selected token ids tensor. Shape: (batch_size, seq_len)
             attention_mask (torch.Tensor): Attention mask tensor. Shape: (batch_size, seq_len)
-            advantages (torch.Tensor): Advantages tensor. Shape: (batch_size,)
+            advantages (torch.Tensor): Advantages tensor. Shape: (batch_size, seq_len)
             bias (torch.Tensor, optional): Bias tensor. Shape: (vocab_size,)
             ref_per_token_logps:  Reference model log probs per token tensor. Shape:(batch_size, seq_len)
             ref_input (torch.Tensor, optional): Reference model input tensor. Shape: (batch_size * seq_len, hidden_size)

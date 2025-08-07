@@ -48,7 +48,7 @@ class TorchLMHeadGRPO(torch.nn.Module):
         x,  # Shape: [batch_size, seq_len, hidden_size]
         selected_token_ids,  # Shape: [batch_size, seq_len]
         attention_mask,  # Shape: [batch_size, seq_len]
-        advantages,  # Shape: [batch_size,]
+        advantages,  # Shape: [batch_size, seq_len]
         ref_per_token_logps=None,  # Shape: [batch_size, seq_len]
         old_per_token_logps=None,
         ref_input=None,  # Shape: [batch_size, seq_len, hidden_size]
@@ -86,8 +86,8 @@ class TorchLMHeadGRPO(torch.nn.Module):
         )
         coef_1 = torch.exp(per_token_logps - old_per_token_logps)
         coef_2 = torch.clamp(coef_1, 1 - self.epsilon_low, 1 + self.epsilon_high)
-        per_token_loss1 = coef_1 * advantages.unsqueeze(1)
-        per_token_loss2 = coef_2 * advantages.unsqueeze(1)
+        per_token_loss1 = coef_1 * advantages
+        per_token_loss2 = coef_2 * advantages
         per_token_loss = -torch.min(per_token_loss1, per_token_loss2)
         if self.beta != 0.0:
             # Compute KL divergence between model and reference model
@@ -109,8 +109,8 @@ class TorchLMHeadGRPO(torch.nn.Module):
         metrics = []
         if self.beta != 0.0:
             metrics.append(((kl_div * attention_mask).sum() / torch.clamp(attention_mask.sum(), min=1.0)))
-        is_clipped = ((coef_1 < 1 - self.epsilon_low) & (advantages.unsqueeze(1) < 0)) | (
-            (coef_1 > 1 + self.epsilon_high) & (advantages.unsqueeze(1) > 0)
+        is_clipped = ((coef_1 < 1 - self.epsilon_low) & (advantages < 0)) | (
+            (coef_1 > 1 + self.epsilon_high) & (advantages > 0)
         )
         metrics.append((is_clipped * attention_mask).sum() / torch.clamp(attention_mask.sum(), min=1.0))
         return loss, metrics
@@ -292,8 +292,8 @@ def test_correctness(
     mask_indices = torch.randperm(B * T)[:num_elements_to_mask]
     attention_mask.view(-1)[mask_indices] = 0
 
-    # Create advantages with shape [B]
-    advantages = torch.rand(B, device=device, dtype=dtype)
+    # Create advantages with shape [B, T]
+    advantages = torch.rand(B, T, device=device, dtype=dtype)
 
     ref_per_token_logps = None
     ref_input = None
@@ -401,7 +401,7 @@ def test_functional_correctness(
 
     attention_mask = torch.ones(B, T, device=device)
 
-    advantages = torch.rand(B, device=device, dtype=dtype)
+    advantages = torch.rand(B, T, device=device, dtype=dtype)
 
     if bias:
         _bias = torch.randn(V, device=device, dtype=dtype) * scalar

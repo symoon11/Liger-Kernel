@@ -209,6 +209,7 @@ class LigerFusedLinearPPOBase(torch.autograd.Function):
             torch._dynamo.mark_dynamic(input_chunk, 1)
             torch._dynamo.mark_dynamic(selected_token_ids_chunk, 1)
             torch._dynamo.mark_dynamic(attention_mask_chunk, 1)
+            torch._dynamo.mark_dynamic(advantages_chunk, 1)
             if ref_per_token_logps_chunk is not None:
                 torch._dynamo.mark_dynamic(ref_per_token_logps_chunk, 1)
             if ref_input_chunk is not None:
