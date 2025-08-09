@@ -31,6 +31,7 @@ class LigerFusedLinearPPOBase(torch.autograd.Function):
         ref_bias=None,
         epsilon_low=0.2,
         epsilon_high=0.2,
+        alpha=0.0,
         beta=0.04,
         loss_type="bnpo",
         max_completion_length=None,
@@ -58,6 +59,7 @@ class LigerFusedLinearPPOBase(torch.autograd.Function):
             ref_bias: Reference model bias tensor
             epsilon_low: Lower bound for clipping the importance sampling ratio
             epsilon_high: Upper bound for clipping the importance sampling ratio
+            alpha: Weight for the entropy
             beta: Weight for the KL penalty
             loss_type: Type of loss calculation ("grpo", "bnpo", "dr_grpo")
             max_completion_length: Maximum completion length required for "dr_grpo"
@@ -89,6 +91,7 @@ class LigerFusedLinearPPOBase(torch.autograd.Function):
             full_attention_mask=attention_mask,
             epsilon_low=epsilon_low,
             epsilon_high=epsilon_high,
+            alpha=alpha,
             beta=beta,
             loss_type=loss_type,
             max_completion_length=max_completion_length,
@@ -259,6 +262,7 @@ class LigerFusedLinearPPOBase(torch.autograd.Function):
         full_attention_mask=None,
         epsilon_low=0.2,
         epsilon_high=0.2,
+        alpha=0.0,
         beta=0.04,
         loss_type="bnpo",
         max_completion_length=None,
@@ -290,6 +294,7 @@ class LigerFusedLinearPPOBase(torch.autograd.Function):
             ref_log_probs=ref_log_probs,  # used when ref_per_token_logps is None
             epsilon_low=epsilon_low,
             epsilon_high=epsilon_high,
+            alpha=alpha,
             beta=beta,
             loss_type=loss_type,
             max_completion_length=max_completion_length,
@@ -337,6 +342,7 @@ class LigerFusedLinearPPOBase(torch.autograd.Function):
             None,  # grad_ref_bias
             None,  # grad_epsilon_low
             None,  # grad_epsilon_high
+            None,  # grad_alpha
             None,  # grad_beta
             None,  # grad_temperature
             None,  # grad_compiled

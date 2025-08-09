@@ -22,6 +22,7 @@ class TorchLMHeadGRPO(torch.nn.Module):
         V: int,
         dtype: torch.dtype,
         bias: bool = False,
+        alpha: float = 0.0,
         beta: float = 0.1,
         epsilon_low: float = 0.2,
         epsilon_high: float = 0.2,
@@ -33,6 +34,7 @@ class TorchLMHeadGRPO(torch.nn.Module):
         super().__init__()
         self.lin = torch.nn.Linear(in_features=H, out_features=V, bias=bias, dtype=dtype)
         self.ref_lin = torch.nn.Linear(in_features=H, out_features=V, bias=bias, dtype=dtype)
+        self.alpha = alpha
         self.beta = beta
         self.epsilon_low = epsilon_low
         self.epsilon_high = epsilon_high
@@ -89,6 +91,10 @@ class TorchLMHeadGRPO(torch.nn.Module):
         per_token_loss1 = coef_1 * advantages
         per_token_loss2 = coef_2 * advantages
         per_token_loss = -torch.min(per_token_loss1, per_token_loss2)
+        if self.alpha != 0.0:
+            # Compute entropy
+            entropy = -(log_probs * torch.exp(log_probs)).sum(-1)
+            per_token_loss = per_token_loss - self.alpha * entropy
         if self.beta != 0.0:
             # Compute KL divergence between model and reference model
             ref_per_token_logps = ref_per_token_logps.float()
@@ -123,6 +129,7 @@ class LigerLMHeadGRPO(torch.nn.Module):
         V: int,
         dtype: torch.dtype,
         bias: bool = False,
+        alpha: float = 0.0,
         beta: float = 0.1,
         epsilon_low: float = 0.2,
         epsilon_high: float = 0.2,
@@ -135,6 +142,7 @@ class LigerLMHeadGRPO(torch.nn.Module):
         self.lin = torch.nn.Linear(in_features=H, out_features=V, bias=bias, dtype=dtype)
         self.ref_lin = torch.nn.Linear(in_features=H, out_features=V, bias=bias, dtype=dtype)
         self.grpo_loss = LigerFusedLinearGRPOLoss(
+            alpha=alpha,
             beta=beta,
             epsilon_low=epsilon_low,
             epsilon_high=epsilon_high,
@@ -187,11 +195,11 @@ class LigerLMHeadGRPO(torch.nn.Module):
 )
 @pytest.mark.parametrize("bias", [True, False])
 @pytest.mark.parametrize(
-    "beta, epsilon_low, epsilon_high, temperature",
+    "alpha, beta, epsilon_low, epsilon_high, temperature",
     [
         # Standard settings
-        (0.1, 0.2, 0.2, 1.0),
-        (0.0, 0.1, 0.1, 2.0),
+        (0.1, 0.1, 0.2, 0.2, 1.0),
+        (0.0, 0.0, 0.1, 0.1, 2.0),
     ],
 )
 @pytest.mark.parametrize(
@@ -213,6 +221,7 @@ def test_correctness(
     atol,
     rtol,
     bias,
+    alpha,
     beta,
     epsilon_low,
     epsilon_high,
@@ -231,6 +240,7 @@ def test_correctness(
         V=V,
         dtype=dtype,
         bias=bias,
+        alpha=alpha,
         beta=beta,
         epsilon_low=epsilon_low,
         epsilon_high=epsilon_high,
@@ -243,6 +253,7 @@ def test_correctness(
         H=H,
         V=V,
         dtype=dtype,
+        alpha=alpha,
         bias=bias,
         beta=beta,
         epsilon_low=epsilon_low,
@@ -440,6 +451,7 @@ def test_functional_correctness(
         ref_input,
         ref_weight1,
         ref_bias1,
+        0.0,
         0.04,
         0.2,
         0.2,
@@ -463,6 +475,7 @@ def test_functional_correctness(
         ref_input,
         ref_weight2,
         ref_bias2,
+        0.0,
         0.04,
         0.2,
         0.2,

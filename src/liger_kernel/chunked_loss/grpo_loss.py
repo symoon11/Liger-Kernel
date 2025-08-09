@@ -28,6 +28,7 @@ class LigerFusedLinearGRPOFunction(LigerFusedLinearPPOBase):
         ref_log_probs=None,  # used when ref_per_token_logps is None (shape: [chunk_size, seq_len, vocab_size])
         epsilon_low=0.2,
         epsilon_high=0.2,
+        alpha=0.0,
         beta=0.04,
         loss_type="bnpo",  # ["grpo", "bnpo", "dr_grpo"]
         max_completion_length=None,  # Required for dr_grpo
@@ -55,6 +56,10 @@ class LigerFusedLinearGRPOFunction(LigerFusedLinearPPOBase):
         per_token_loss1 = coef_1 * advantages
         per_token_loss2 = coef_2 * advantages
         per_token_loss = -torch.min(per_token_loss1, per_token_loss2)
+        if alpha != 0.0:
+            # Compute entropy
+            entropy = -(log_probs * torch.exp(log_probs)).sum(-1)
+            per_token_loss = per_token_loss - alpha * entropy
         if beta != 0.0:
             # Compute KL penalty (approximates KL[per_token_logps, ref_per_token_logps])
             kl_div = k3_loss_fn(ref_per_token_logps, per_token_logps)
@@ -106,6 +111,7 @@ class LigerFusedLinearGRPOFunction(LigerFusedLinearPPOBase):
         ref_input=None,
         ref_weight=None,
         ref_bias=None,
+        alpha=0.0,
         beta=0.04,
         epsilon_low=0.2,
         epsilon_high=0.2,
@@ -153,6 +159,7 @@ class LigerFusedLinearGRPOFunction(LigerFusedLinearPPOBase):
             ref_input=ref_input,
             ref_weight=ref_weight,
             ref_bias=ref_bias,
+            alpha=alpha,
             beta=beta,
             epsilon_low=epsilon_low,
             epsilon_high=epsilon_high,
@@ -182,6 +189,7 @@ class LigerFusedLinearGRPOFunction(LigerFusedLinearPPOBase):
             None,  # grad_ref_input
             None,  # grad_ref_weight
             None,  # grad_ref_bias
+            None,  # grad_alpha
             None,  # grad_beta
             None,  # grad_epsilon_low
             None,  # grad_epsilon_high
@@ -199,6 +207,7 @@ class LigerFusedLinearGRPOLoss(torch.nn.Module):
 
     def __init__(
         self,
+        alpha: float = 0.0,
         beta: float = 0.04,
         compiled: bool = True,
         use_ref_model: bool = True,
@@ -211,6 +220,7 @@ class LigerFusedLinearGRPOLoss(torch.nn.Module):
     ):
         """
         Args:
+            alpha (float): Weight for the entropy.
             beta (float): Weight for the KL penalty.
             compiled (bool): Whether to use torch compile.
             use_ref_model (bool): Whether to use a reference model.
@@ -222,6 +232,7 @@ class LigerFusedLinearGRPOLoss(torch.nn.Module):
             temperature (float): Temperature for the logits.
         """
         super().__init__()
+        self.alpha = alpha
         self.beta = beta
         self.compiled = compiled
         self.use_ref_model = use_ref_model
@@ -258,6 +269,7 @@ class LigerFusedLinearGRPOLoss(torch.nn.Module):
             ref_input,
             ref_weight,
             ref_bias,
+            self.alpha,
             self.beta,
             self.epsilon_low,
             self.epsilon_high,
