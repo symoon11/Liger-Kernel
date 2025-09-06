@@ -58,7 +58,7 @@ class LigerFusedLinearGRPOFunction(LigerFusedLinearPPOBase):
         per_token_loss = -torch.min(per_token_loss1, per_token_loss2)
         if alpha != 0.0:
             # Compute entropy
-            entropy = -(log_probs * torch.exp(log_probs)).sum(-1)
+            entropy = -(torch.exp(log_probs) * log_probs).sum(-1)
             per_token_loss = per_token_loss - alpha * entropy
         if beta != 0.0:
             # Compute KL penalty (approximates KL[per_token_logps, ref_per_token_logps])
