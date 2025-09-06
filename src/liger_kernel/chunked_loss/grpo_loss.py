@@ -25,6 +25,7 @@ class LigerFusedLinearGRPOFunction(LigerFusedLinearPPOBase):
         full_attention_mask,
         ref_per_token_logps=None,  # shape: [chunk_size, seq_len]
         old_per_token_logps=None,
+        off_per_token_logps=None,
         ref_log_probs=None,  # used when ref_per_token_logps is None (shape: [chunk_size, seq_len, vocab_size])
         epsilon_low=0.2,
         epsilon_high=0.2,
@@ -49,10 +50,18 @@ class LigerFusedLinearGRPOFunction(LigerFusedLinearPPOBase):
             else:
                 ref_per_token_logps = per_token_logps.detach()
 
+        # Get off-policy model probabilities
+        if off_per_token_logps is None:
+            off_per_token_logps = old_per_token_logps
+
         # Compute policy gradient loss with importance sampling ratio
         old_per_token_logps = old_per_token_logps if old_per_token_logps is not None else per_token_logps.detach()
-        coef_1 = torch.exp(per_token_logps - old_per_token_logps)
-        coef_2 = clip_coef_fn(coef_1, epsilon_low, epsilon_high)
+        log_ratio_1 = per_token_logps - off_per_token_logps
+        log_ratio_2 = per_token_logps - old_per_token_logps
+        log_ratio_2 = torch.clamp(log_ratio_2, torch.log(1.0 - epsilon_low), torch.log(1.0 + epsilon_high))
+        log_ratio_2 = log_ratio_2 + old_per_token_logps - off_per_token_logps
+        coef_1 = torch.exp(log_ratio_1)
+        coef_2 = torch.exp(log_ratio_2)
         per_token_loss1 = coef_1 * advantages
         per_token_loss2 = coef_2 * advantages
         per_token_loss = -torch.min(per_token_loss1, per_token_loss2)
@@ -90,9 +99,7 @@ class LigerFusedLinearGRPOFunction(LigerFusedLinearPPOBase):
         metrics = []
         if beta != 0.0:
             metrics.append(((kl_div * attention_mask).sum() / torch.clamp(full_attention_mask.sum(), min=1.0)))
-        is_clipped = ((coef_1 < 1 - epsilon_low) & (advantages < 0)) | (
-            (coef_1 > 1 + epsilon_high) & (advantages > 0)
-        )
+        is_clipped = ((coef_1 < 1 - epsilon_low) & (advantages < 0)) | ((coef_1 > 1 + epsilon_high) & (advantages > 0))
         metrics.append((is_clipped * attention_mask).sum() / torch.clamp(full_attention_mask.sum(), min=1.0))
         return loss, metrics
 
@@ -108,6 +115,7 @@ class LigerFusedLinearGRPOFunction(LigerFusedLinearPPOBase):
         bias=None,
         ref_per_token_logps=None,
         old_per_token_logps=None,
+        off_per_token_logps=None,
         ref_input=None,
         ref_weight=None,
         ref_bias=None,
@@ -131,7 +139,9 @@ class LigerFusedLinearGRPOFunction(LigerFusedLinearPPOBase):
             attention_mask (torch.Tensor): Attention mask tensor. Shape: (batch_size, seq_len)
             advantages (torch.Tensor): Advantages tensor. Shape: (batch_size, seq_len)
             bias (torch.Tensor, optional): Bias tensor. Shape: (vocab_size,)
-            ref_per_token_logps:  Reference model log probs per token tensor. Shape:(batch_size, seq_len)
+            ref_per_token_logps: Reference model log probs per token tensor. Shape:(batch_size, seq_len)
+            old_per_token_logps: Old model log probs per token tensor. Shape:(batch_size, seq_len)
+            off_per_token_logps: Off-policy model log probs per token tensor. Shape:(batch_size, seq_len)
             ref_input (torch.Tensor, optional): Reference model input tensor. Shape: (batch_size * seq_len, hidden_size)
             ref_weight (torch.Tensor, optional): Reference model weight tensor. Shape: (vocab_size, hidden_size)
             ref_bias (torch.Tensor, optional): Reference model bias tensor. Shape: (vocab_size,)
@@ -156,6 +166,7 @@ class LigerFusedLinearGRPOFunction(LigerFusedLinearPPOBase):
             bias=bias,
             ref_per_token_logps=ref_per_token_logps,
             old_per_token_logps=old_per_token_logps,
+            off_per_token_logps=off_per_token_logps,
             ref_input=ref_input,
             ref_weight=ref_weight,
             ref_bias=ref_bias,
@@ -186,6 +197,7 @@ class LigerFusedLinearGRPOFunction(LigerFusedLinearPPOBase):
             ],  # grad_input, grad_weight, grad_selected_token_ids, grad_attention_mask, grad_advantages, grad_bias
             None,  # grad_ref_per_token_logps
             None,  # grad_old_per_token_logps
+            None,  # grad_off_per_token_logps
             None,  # grad_ref_input
             None,  # grad_ref_weight
             None,  # grad_ref_bias
@@ -253,6 +265,7 @@ class LigerFusedLinearGRPOLoss(torch.nn.Module):
         bias=None,
         ref_per_token_logps=None,
         old_per_token_logps=None,
+        off_per_token_logps=None,
         ref_input=None,
         ref_weight=None,
         ref_bias=None,
@@ -266,6 +279,7 @@ class LigerFusedLinearGRPOLoss(torch.nn.Module):
             bias,
             ref_per_token_logps,
             old_per_token_logps,
+            off_per_token_logps,
             ref_input,
             ref_weight,
             ref_bias,

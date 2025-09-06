@@ -26,6 +26,7 @@ class LigerFusedLinearPPOBase(torch.autograd.Function):
         bias=None,
         ref_per_token_logps=None,
         old_per_token_logps=None,
+        off_per_token_logps=None,
         ref_input=None,
         ref_weight=None,
         ref_bias=None,
@@ -54,6 +55,7 @@ class LigerFusedLinearPPOBase(torch.autograd.Function):
             bias: Bias tensor
             ref_per_token_logps: Reference model log probs per token tensor
             old_per_token_logps: Old per token log probabilities tensor
+            off_per_token_logps: Off-policy per token log probabilities tensor
             ref_input: Reference model input tensor
             ref_weight: Reference model weight tensor
             ref_bias: Reference model bias tensor
@@ -107,6 +109,7 @@ class LigerFusedLinearPPOBase(torch.autograd.Function):
             advantages_chunk,
             ref_per_token_logps_chunk,
             old_per_token_logps_chunk,
+            off_per_token_logps_chunk,
             ref_input_chunk,
         ):
             """Fused forward and backward for a chunk."""
@@ -120,7 +123,8 @@ class LigerFusedLinearPPOBase(torch.autograd.Function):
                 bias,  # arg 5
                 ref_per_token_logps_chunk=ref_per_token_logps_chunk,  # arg 6
                 old_per_token_logps_chunk=old_per_token_logps_chunk,  # arg 7
-                ref_input_chunk=ref_input_chunk,  # arg 8
+                off_per_token_logps_chunk=off_per_token_logps_chunk,  # arg 8
+                ref_input_chunk=ref_input_chunk,  # arg 9
             )
 
         def accumulate_chunk(
@@ -130,6 +134,7 @@ class LigerFusedLinearPPOBase(torch.autograd.Function):
             advantages_chunk,
             ref_per_token_logps_chunk=None,
             old_per_token_logps_chunk=None,
+            off_per_token_logps_chunk=None,
             ref_input_chunk=None,
         ):
             (chunk_grad_input, chunk_grad_weight, *chunk_grad_bias), (chunk_loss, chunk_metrics) = fused_fwd_bwd(
@@ -139,6 +144,7 @@ class LigerFusedLinearPPOBase(torch.autograd.Function):
                 advantages_chunk,
                 ref_per_token_logps_chunk,
                 old_per_token_logps_chunk,
+                off_per_token_logps_chunk,
                 ref_input_chunk,
             )
             if bias is not None:
@@ -184,6 +190,11 @@ class LigerFusedLinearPPOBase(torch.autograd.Function):
             if old_per_token_logps is not None
             else [None] * chunks
         )
+        _off_per_token_logps_chunks = (
+            torch.chunk(off_per_token_logps, chunks=chunks, dim=0)
+            if off_per_token_logps is not None
+            else [None] * chunks
+        )
         # if ref_log_probs is not none, then we don't need ref_input to calculate the log probs
         _ref_input_chunks = (
             torch.chunk(ref_input, chunks=chunks, dim=0)
@@ -198,6 +209,7 @@ class LigerFusedLinearPPOBase(torch.autograd.Function):
             advantages_chunk,
             ref_per_token_logps_chunk,
             old_per_token_logps_chunk,
+            off_per_token_logps_chunk,
             ref_input_chunk,
         ) in zip(
             _input_chunks,
@@ -206,6 +218,7 @@ class LigerFusedLinearPPOBase(torch.autograd.Function):
             _advantages_chunks,
             _ref_per_token_logps_chunks,
             _old_per_token_logps_chunks,
+            _off_per_token_logps_chunks,
             _ref_input_chunks,
         ):
             # Mark dynamic dimensions
@@ -219,6 +232,8 @@ class LigerFusedLinearPPOBase(torch.autograd.Function):
                 torch._dynamo.mark_dynamic(ref_input_chunk, 1)
             if old_per_token_logps_chunk is not None:
                 torch._dynamo.mark_dynamic(old_per_token_logps_chunk, 1)
+            if off_per_token_logps_chunk is not None:
+                torch._dynamo.mark_dynamic(off_per_token_logps_chunk, 1)
 
             accumulate_chunk(
                 input_chunk,
@@ -227,6 +242,7 @@ class LigerFusedLinearPPOBase(torch.autograd.Function):
                 advantages_chunk,
                 ref_per_token_logps_chunk,
                 old_per_token_logps_chunk,
+                off_per_token_logps_chunk,
                 ref_input_chunk,
             )
 
@@ -256,6 +272,7 @@ class LigerFusedLinearPPOBase(torch.autograd.Function):
         bias=None,
         ref_per_token_logps_chunk=None,
         old_per_token_logps_chunk=None,
+        off_per_token_logps_chunk=None,
         ref_input_chunk=None,
         ref_weight=None,
         ref_bias=None,
@@ -291,6 +308,7 @@ class LigerFusedLinearPPOBase(torch.autograd.Function):
             full_attention_mask=full_attention_mask,
             ref_per_token_logps=ref_per_token_logps_chunk.float() if ref_per_token_logps_chunk is not None else None,
             old_per_token_logps=old_per_token_logps_chunk.float() if old_per_token_logps_chunk is not None else None,
+            off_per_token_logps=off_per_token_logps_chunk.float() if off_per_token_logps_chunk is not None else None,
             ref_log_probs=ref_log_probs,  # used when ref_per_token_logps is None
             epsilon_low=epsilon_low,
             epsilon_high=epsilon_high,
@@ -337,6 +355,7 @@ class LigerFusedLinearPPOBase(torch.autograd.Function):
             grad_bias,
             None,  # grad_ref_per_token_logps
             None,  # grad_old_per_token_logps
+            None,  # grad_off_per_token_logps
             None,  # grad_ref_input
             None,  # grad_ref_weight
             None,  # grad_ref_bias
