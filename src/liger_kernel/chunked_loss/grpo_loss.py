@@ -1,3 +1,5 @@
+import math
+
 from typing import Optional
 
 import torch
@@ -58,7 +60,7 @@ class LigerFusedLinearGRPOFunction(LigerFusedLinearPPOBase):
         old_per_token_logps = old_per_token_logps if old_per_token_logps is not None else per_token_logps.detach()
         log_ratio_1 = per_token_logps - off_per_token_logps
         log_ratio_2 = per_token_logps - old_per_token_logps
-        log_ratio_2 = torch.clamp(log_ratio_2, torch.log(1.0 - epsilon_low), torch.log(1.0 + epsilon_high))
+        log_ratio_2 = torch.clamp(log_ratio_2, math.log(1.0 - epsilon_low), math.log(1.0 + epsilon_high))
         log_ratio_2 = log_ratio_2 + old_per_token_logps - off_per_token_logps
         coef_1 = torch.exp(log_ratio_1)
         coef_2 = torch.exp(log_ratio_2)
