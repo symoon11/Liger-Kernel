@@ -31,6 +31,7 @@ class LigerFusedLinearGRPOFunction(LigerFusedLinearPPOBase):
         ref_log_probs=None,  # used when ref_per_token_logps is None (shape: [chunk_size, seq_len, vocab_size])
         epsilon_low=0.2,
         epsilon_high=0.2,
+        delta=100.0,
         alpha=0.0,
         beta=0.04,
         loss_type="bnpo",  # ["grpo", "bnpo", "dr_grpo"]
@@ -55,6 +56,7 @@ class LigerFusedLinearGRPOFunction(LigerFusedLinearPPOBase):
         # Get off-policy model probabilities
         if off_per_token_logps is None:
             off_per_token_logps = old_per_token_logps
+        off_per_token_logps = torch.max(off_per_token_logps, per_token_logps - math.log(delta))
 
         # Compute policy gradient loss with importance sampling ratio
         old_per_token_logps = old_per_token_logps if old_per_token_logps is not None else per_token_logps.detach()
@@ -125,6 +127,7 @@ class LigerFusedLinearGRPOFunction(LigerFusedLinearPPOBase):
         beta=0.04,
         epsilon_low=0.2,
         epsilon_high=0.2,
+        delta=100.0,
         loss_type="bnpo",
         max_completion_length=None,
         temperature=1.0,
@@ -147,6 +150,7 @@ class LigerFusedLinearGRPOFunction(LigerFusedLinearPPOBase):
             ref_input (torch.Tensor, optional): Reference model input tensor. Shape: (batch_size * seq_len, hidden_size)
             ref_weight (torch.Tensor, optional): Reference model weight tensor. Shape: (vocab_size, hidden_size)
             ref_bias (torch.Tensor, optional): Reference model bias tensor. Shape: (vocab_size,)
+            alpha (float): Weight for the entropy
             beta (float): Weight for the KL penalty
             loss_type (str): Type of loss calculation ("grpo", "bnpo", "dr_grpo"). Defaults to "bnpo".
             max_completion_length (int, optional): Maximum completion length, required for "dr_grpo". Defaults to None.
@@ -176,6 +180,7 @@ class LigerFusedLinearGRPOFunction(LigerFusedLinearPPOBase):
             beta=beta,
             epsilon_low=epsilon_low,
             epsilon_high=epsilon_high,
+            delta=delta,
             loss_type=loss_type,
             max_completion_length=max_completion_length,
             temperature=temperature,
@@ -207,6 +212,7 @@ class LigerFusedLinearGRPOFunction(LigerFusedLinearPPOBase):
             None,  # grad_beta
             None,  # grad_epsilon_low
             None,  # grad_epsilon_high
+            None,  # grad_delta
             None,  # grad_loss_type (string, not differentiable)
             None,  # grad_max_completion_length (int, not differentiable)
             None,  # grad_temperature
@@ -228,6 +234,7 @@ class LigerFusedLinearGRPOLoss(torch.nn.Module):
         chunk_size: int = 1,
         epsilon_low: float = 0.2,
         epsilon_high: float = 0.2,
+        delta: float = 100.0,
         loss_type: str = "bnpo",
         max_completion_length: Optional[int] = None,
         temperature: float = 1.0,
@@ -241,6 +248,7 @@ class LigerFusedLinearGRPOLoss(torch.nn.Module):
             chunk_size (int): Size of chunks for processing.
             epsilon_low (float): Lower bound for the importance sampling ratio.
             epsilon_high (float): Upper bound for the importance sampling ratio.
+            delta (float): Upper bound for the importance sampling ratio in off-policy correction.
             loss_type (str): Type of loss calculation ("grpo", "bnpo", "dr_grpo"). Defaults to "bnpo".
             max_completion_length (int, optional): Maximum completion length, required for "dr_grpo". Defaults to None.
             temperature (float): Temperature for the logits.
@@ -253,6 +261,7 @@ class LigerFusedLinearGRPOLoss(torch.nn.Module):
         self.chunk_size = chunk_size
         self.epsilon_low = epsilon_low
         self.epsilon_high = epsilon_high
+        self.delta = delta
         self.loss_type = loss_type
         self.max_completion_length = max_completion_length
         self.temperature = temperature
@@ -289,6 +298,7 @@ class LigerFusedLinearGRPOLoss(torch.nn.Module):
             self.beta,
             self.epsilon_low,
             self.epsilon_high,
+            self.delta,
             self.loss_type,
             self.max_completion_length,
             self.temperature,
