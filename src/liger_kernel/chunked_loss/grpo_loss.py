@@ -103,7 +103,7 @@ class LigerFusedLinearGRPOFunction(LigerFusedLinearPPOBase):
         metrics = []
         if beta != 0.0:
             metrics.append(((kl_div * attention_mask).sum() / torch.clamp(full_attention_mask.sum(), min=1.0)))
-        is_clipped = ((coef_1 < 1 - epsilon_low) & (advantages < 0)) | ((coef_1 > 1 + epsilon_high) & (advantages > 0))
+        is_clipped = torch.gt(per_token_loss1, per_token_loss2).float()
         metrics.append((is_clipped * attention_mask).sum() / torch.clamp(full_attention_mask.sum(), min=1.0))
         return loss, metrics
 
